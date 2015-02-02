@@ -44,11 +44,6 @@ public class App {
         String readOsm = null;
         for (String fileName : args) {
             File file = new File(fileName);
-            if(!file.exists()) {
-                System.out.println(fileName + " does not exist or is not a csv file.");
-                System.exit(1);
-                return;
-            }
 
             if (file.getName().endsWith(".csv")) {
                 csvFiles.add(file);
@@ -91,7 +86,7 @@ public class App {
                         int easting = Integer.parseInt(csvRecord.get(headers.get("S Ref E")));
                         int northing = Integer.parseInt(csvRecord.get(headers.get("S Ref N")));
 
-                        final int tolerance = 10;
+                        final int tolerance = 50;
 
                         final OSRef bottomLeft = new OSRef(easting - tolerance, northing - tolerance);
                         final OSRef topRight = new OSRef(easting + tolerance, northing + tolerance);
@@ -129,16 +124,19 @@ public class App {
                                 Element outputTagElement;
                                 outputElement.appendChild(outputTagElement = translationDoc.createElement("tag"));
                                 final String trafficVolume = csvRecord.get(header.getValue());
-                                outputTagElement.setAttribute(header.getKey(), trafficVolume);
+                                outputTagElement.setAttribute("k", header.getKey());
+                                outputTagElement.setAttribute("v", trafficVolume);
                             }
                         }
                         final DOMSource domSource = new DOMSource(translationDoc);
                         final StreamResult streamResult =new StreamResult(new File(translationFile));
                         transformer.transform(domSource, streamResult);
 
+                        if(row == 9833) {
                         System.out.println(cmd.toString());
                         System.err.println(String.format("%s, %s",
                             road, csvRecord.get(headers.get("ONS LA Name"))));
+                        }
                     }
                 }
             }
