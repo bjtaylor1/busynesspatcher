@@ -24,3 +24,7 @@ translations/
 translated/
 AADF-data-major-roads.csv
 AADF-data-minor-roads.csv
+
+*.osm.pbf
+*.osm
+*.cache

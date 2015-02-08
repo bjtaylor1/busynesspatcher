@@ -18,6 +18,7 @@ import org.w3c.dom.Element;
 import uk.me.jstott.jcoord.LatLng;
 import uk.me.jstott.jcoord.OSRef;
 
+import javax.management.StringValueExp;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.OutputKeys;
@@ -33,115 +34,90 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Hello world!
- */
-
 
 public class App {
-    public static void main(String[] args) {
-        List<File> csvFiles = new ArrayList<File>();
-        String readOsm = null;
-        for (String fileName : args) {
-            File file = new File(fileName);
+	public static void main(String[] args) {
+		List<File> csvFiles = new ArrayList<File>();
+		for (String fileName : args) {
+			File file = new File(fileName);
 
-            if (file.getName().endsWith(".csv")) {
-                csvFiles.add(file);
-            }
-
-            if(file.getName().endsWith(".osm")) {
-                readOsm = "--read-xml file=\"" + file.getName() +"\"";
-            } else if (file.getName().endsWith(".osm.pbf")) {
-                readOsm = "--read-pbf file=\"" + file.getName() + "\"";
-            }
-        }
-
-        if(readOsm == null)  {
-            System.out.print("Must specify osm or pbf file.");
-            System.exit(1);
-            return;
-        }
-
-        final File translationsDir = new File("translations");
-        if(!translationsDir.exists()) translationsDir.mkdir();
+			if (file.getName().endsWith(".csv")) {
+				csvFiles.add(file);
+			}
+		}
 
 
-        try {
-            final DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
-            final DocumentBuilder documentBuilder = documentBuilderFactory.newDocumentBuilder();
-            final TransformerFactory transformerFactory = TransformerFactory.newInstance();
-            final Transformer transformer = transformerFactory.newTransformer();
-            transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-            transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
-            for (File file : csvFiles) {
-                CSVParser csvParser = CSVParser.parse(file, Charset.defaultCharset(), CSVFormat.DEFAULT);
-                final Map<String,Integer> headers = new HashMap<>();
-                int row = 0;
-                for(CSVRecord csvRecord : csvParser) {
-                    if(++row == 1) {
-                        for(int i = 0; i < csvRecord.size(); i++) {
-                            headers.put(csvRecord.get(i), i);
-                        }
-                    } else {
-                        int easting = Integer.parseInt(csvRecord.get(headers.get("S Ref E")));
-                        int northing = Integer.parseInt(csvRecord.get(headers.get("S Ref N")));
+		try {
+			for (File file : csvFiles) {
+				CSVParser csvParser = CSVParser.parse(file, Charset.defaultCharset(), CSVFormat.DEFAULT);
+				int row = 0;
+				final List<Integer> indexes = new ArrayList<Integer>();
+				int headerE = -1, headerN = -1, headerRoad = -1, headerCategory = -1;
+				for(CSVRecord csvRecord : csvParser) {
+					if(++row == 1) {
+						System.out.print("insert into busyness(ref, geometry, category");
+						for(int i = 0; i < csvRecord.size(); i++) {
+							final String header = csvRecord.get(i);
+							if(header.startsWith("Score")) {
+								System.out.print(", " + header);
+								indexes.add(i);
+							}
+							if(header.equals("S Ref E")) headerE = i;
+							if(header.equals("S Ref N")) headerN = i;
+							if(header.equals("Road")) headerRoad = i;
+							if(header.equals("Category")) headerCategory = i;
+						}
+						System.out.println(") values ");
+					} else {
 
-                        final int tolerance = 50;
+						try {
 
-                        final OSRef bottomLeft = new OSRef(easting - tolerance, northing - tolerance);
-                        final OSRef topRight = new OSRef(easting + tolerance, northing + tolerance);
-                        final LatLng latLngBottomLeft = bottomLeft.toLatLng();
-                        final LatLng latLngTopRight = topRight.toLatLng();
-                        latLngBottomLeft.toWGS84();
-                        latLngTopRight.toWGS84();
+							int easting = Integer.parseInt(csvRecord.get(headerE));
+							int northing = Integer.parseInt(csvRecord.get(headerN));
 
-                        final String bboxString = String.format("--bb left=%.4f bottom=%.4f right=%.4f top=%.4f",
-                            latLngBottomLeft.getLng(), latLngBottomLeft.getLat(),
-                            latLngTopRight.getLng(), latLngTopRight.getLat());
-                        final String translationFile = String.format("translations/translation.%d.xml", row);
-                        final String translation = String.format("--tt %s", translationFile);
-                        final String output = String.format("--write-xml translated/translated.%d.osm", row);
+							if(row > 2) System.out.print(", ");
 
-                        final StringBuilder cmd = new StringBuilder("osmosis ")
-                            .append(readOsm).append(" ")
-                            .append(bboxString).append(" ")
-                            .append(translation).append(" ")
-                            .append(output);
+							final int tolerance = 200;
 
+							final OSRef bottomLeft = new OSRef(easting - tolerance, northing - tolerance);
+							final OSRef topRight = new OSRef(easting + tolerance, northing + tolerance);
+							final LatLng latLngBottomLeft = bottomLeft.toLatLng();
+							final LatLng latLngTopRight = topRight.toLatLng();
+							latLngBottomLeft.toWGS84();
+							latLngTopRight.toWGS84();
 
-                        Document translationDoc = documentBuilder.newDocument();
-                        Element translationsElement, translationElement, matchElement, outputElement, roadTagElement;
-                        translationDoc.appendChild(translationsElement = translationDoc.createElement("translations"));
-                        translationsElement.appendChild(translationElement = translationDoc.createElement("translation"));
-                        translationElement.appendChild(matchElement = translationDoc.createElement("match"));
-                        translationElement.appendChild(outputElement = translationDoc.createElement("output"));
-                        final String road = csvRecord.get(headers.get("Road")).trim();
-                        matchElement.appendChild(roadTagElement = translationDoc.createElement("tag"));
-                        roadTagElement.setAttribute("k", "ref");
-                        roadTagElement.setAttribute("v", road + ".*");
-                        for(Map.Entry<String,Integer> header: headers.entrySet()) {
-                            if(header.getKey().startsWith("Fd")) {
-                                Element outputTagElement;
-                                outputElement.appendChild(outputTagElement = translationDoc.createElement("tag"));
-                                final String trafficVolume = csvRecord.get(header.getValue());
-                                outputTagElement.setAttribute("k", header.getKey());
-                                outputTagElement.setAttribute("v", trafficVolume);
-                            }
-                        }
-                        final DOMSource domSource = new DOMSource(translationDoc);
-                        final StreamResult streamResult =new StreamResult(new File(translationFile));
-                        transformer.transform(domSource, streamResult);
+							final double bottom = latLngBottomLeft.getLat(),
+										left = latLngBottomLeft.getLng(),
+										top = latLngTopRight.getLat(),
+										right = latLngTopRight.getLng();
 
-                        if(row == 9833) {
-                        System.out.println(cmd.toString());
-                        System.err.println(String.format("%s, %s",
-                            road, csvRecord.get(headers.get("ONS LA Name"))));
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+							final String geometryWkt = String.format(
+									"POLYGON((%.5f %.5f, %.5f %.5f, %.5f %.5f, %.5f %.5f, %.5f %.5f))",
+									left, bottom,
+									right, bottom,
+									right, top,
+									left, top,
+									left, bottom
+									);
+
+							final String roadRef = csvRecord.get(headerRoad);
+							final String category = csvRecord.get(headerCategory);
+
+							System.out.print(String.format("('%s', ST_Transform(ST_GeomFromText('%s', 4326), 900913), '%s'", roadRef, geometryWkt, category));
+							for(Integer index : indexes){
+								System.out.print(", " + csvRecord.get(index));
+							}
+							System.out.println(") ");
+
+						}catch(NumberFormatException e) {
+							System.err.println(String.format("(Number format exception on row %d", row));
+						}
+					}
+				}
+				System.out.println(";");
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
 }
